@@ -1,0 +1,24 @@
+[project]
+name = "spade"
+version = "0.1.0"
+description = "Structure-preserving synthetic collaborative filtering data generation via factorized WGAN-GP latent modeling and discrete-by-construction interaction decoding."
+authors = [
+    {name = "Sagnik Taraphdar",email = "code.sagnik@gmail.com"}
+]
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "tensorflow[and-cuda] (==2.18.0)",
+    "pandas (<3.0.0)",
+    "scipy (>=1.17.1,<2.0.0)",
+    "scikit-learn (>=1.8.0,<2.0.0)",
+    "tqdm (>=4.67.3,<5.0.0)",
+    "requests (>=2.34.2,<3.0.0)",
+    "wandb (>=0.27.0,<0.28.0)",
+    "faiss-cpu (>=1.14.2,<2.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
