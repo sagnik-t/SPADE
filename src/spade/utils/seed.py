@@ -1,39 +1,35 @@
-"""Global seeding for reproducibility across the 5-seed experimental protocol."""
+"""Seeding utilities.
+
+JAX threads explicit PRNG keys rather than relying on global RNG state, so
+:func:`set_global_seed` covers the stateful libraries (Python, NumPy) used for
+data shuffling, negative sampling, and faiss, while :func:`jax_key` mints an
+explicit key for model code to split and thread through.
+"""
 
 from __future__ import annotations
 
 import os
 import random
+from typing import Any
 
-__all__ = ["set_global_seed"]
+__all__ = ["set_global_seed", "jax_key"]
 
 
-def set_global_seed(seed: int, deterministic_tf: bool = True) -> int:
-    """Seed Python, NumPy, and TensorFlow RNGs.
-
-    TensorFlow and NumPy are imported lazily so lightweight code paths (config
-    parsing, tests) do not pay the TF import cost. Returns ``seed`` for logging.
-    """
+def set_global_seed(seed: int) -> int:
+    """Seed the stateful RNGs (Python, NumPy). Returns ``seed`` for logging."""
     os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
-
     try:
         import numpy as np
 
         np.random.seed(seed)
     except ImportError:  # pragma: no cover - numpy is a hard dep in practice
         pass
-
-    try:
-        import tensorflow as tf
-
-        tf.random.set_seed(seed)
-        if deterministic_tf:
-            try:
-                tf.config.experimental.enable_op_determinism()
-            except Exception:  # pragma: no cover - hardware/op dependent
-                pass
-    except ImportError:
-        pass
-
     return seed
+
+
+def jax_key(seed: int) -> Any:
+    """Return a JAX PRNG key (typed-key API) to be split and threaded by callers."""
+    import jax
+
+    return jax.random.key(seed)
