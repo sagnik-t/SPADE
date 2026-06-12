@@ -54,7 +54,7 @@ class WandbRun:
             self._run.finish()
             self._run = None
 
-    def __enter__(self) -> "WandbRun":
+    def __enter__(self) -> WandbRun:
         return self
 
     def __exit__(self, *exc: object) -> None:
