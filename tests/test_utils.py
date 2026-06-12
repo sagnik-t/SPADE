@@ -1,8 +1,9 @@
 """Reproducibility tests for seeding and a smoke test for the W&B wrapper."""
 
+import os
 import random
 
-from spade.utils import init_wandb, set_global_seed
+from spade.utils import init_wandb, load_env, set_global_seed
 
 
 def test_python_rng_is_deterministic():
@@ -32,3 +33,25 @@ def test_disabled_wandb_is_inactive_and_noops():
     assert run.active is False
     run.log({"loss": 1.0})  # must not raise
     run.finish()
+
+
+def test_load_env_reads_file(tmp_path, monkeypatch):
+    monkeypatch.delenv("SPADE_TEST_VAR", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("SPADE_TEST_VAR=hello\n")
+    assert load_env(env_file) is True
+    assert os.environ["SPADE_TEST_VAR"] == "hello"
+
+
+def test_load_env_does_not_override_by_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPADE_TEST_VAR", "from-shell")
+    env_file = tmp_path / ".env"
+    env_file.write_text("SPADE_TEST_VAR=from-file\n")
+    load_env(env_file)  # override=False
+    assert os.environ["SPADE_TEST_VAR"] == "from-shell"
+    load_env(env_file, override=True)
+    assert os.environ["SPADE_TEST_VAR"] == "from-file"
+
+
+def test_load_env_missing_file_is_falsey(tmp_path):
+    assert load_env(tmp_path / "nope.env") is False
