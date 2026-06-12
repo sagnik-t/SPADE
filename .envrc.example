@@ -1,0 +1,17 @@
+# direnv config for SPADE. Copy to `.envrc` (git-ignored), then run
+# `direnv allow` once. direnv re-runs this on `cd` into the project, loading
+# your .env and activating the Poetry in-project virtualenv automatically.
+
+# Re-evaluate when these files change.
+watch_file .env
+watch_file pyproject.toml
+
+# Load variables from .env into the shell (no error if the file is absent).
+# This is in addition to spade.utils.load_env(), so the vars are available to
+# ad-hoc terminal commands too, not just the Python entrypoints.
+dotenv_if_exists .env
+
+# Activate the Poetry in-project virtualenv (.venv) when present.
+if [ -d .venv ]; then
+  source .venv/bin/activate
+fi
