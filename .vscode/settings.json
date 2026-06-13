@@ -1,0 +1,16 @@
+{
+  // Point the editor/Pylance at the Poetry in-project virtualenv, where jax,
+  // flax, optax, etc. are installed. Without this, Pylance analyzes against a
+  // different interpreter and reports unresolved-import for third-party packages.
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+
+  // The package lives under src/ (src layout), so Pylance needs src on its
+  // analysis path to resolve `spade.*` imports without an editable install.
+  "python.analysis.extraPaths": ["src"],
+  "python.analysis.typeCheckingMode": "basic",
+
+  // Run tests through the same interpreter; matches pyproject's testpaths.
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests"]
+}
