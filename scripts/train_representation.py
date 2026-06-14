@@ -1,11 +1,11 @@
-"""Train Stage I on a prepared dataset split and export the real embeddings.
+"""Train the representation stage and export the real embeddings.
 
-Loads (or builds) the leakage-safe splits for the configured dataset/seed, trains
-the representation model jointly, and writes ``Z_u``/``Z_i`` plus the rating
-vocabulary under ``output_dir``. Reuses the project's dataclass/CLI config::
+Loads (or builds) the leakage-safe splits for the configured dataset/seed, fits
+the representation model jointly via :class:`RepresentationTrainer`, and writes
+``Z_u``/``Z_i`` plus the rating vocabulary under ``output_dir``::
 
-    poetry run python scripts/train_stage1.py --data.dataset ml-100k --seed 42 \
-        --representation.epochs 100
+    poetry run python scripts/train_representation.py --data.dataset ml-100k \
+        --seed 42 --representation.epochs 100
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from __future__ import annotations
 from spade.config import ExperimentConfig
 from spade.config.base import parse_args
 from spade.data import build_store, load_dataset, load_splits, save_splits, split_store
-from spade.models import export_stage1, train_stage1
+from spade.training import RepresentationTrainer
 from spade.utils import get_logger, init_wandb, load_env, set_global_seed
 
 logger = get_logger(__name__)
@@ -38,19 +38,13 @@ def main() -> None:
     logger.info("train/val/test = %s", splits.summary())
 
     run = init_wandb(cfg, project=cfg.wandb_project, name=cfg.name, mode=cfg.wandb_mode)
-    state = train_stage1(cfg, splits.train, splits.val)
-    for row in state.history:
-        run.log(row, step=int(row["epoch"]))
-
-    path = export_stage1(
-        state,
-        splits.train.n_users,
-        splits.train.n_items,
-        cfg.output_dir,
-        d.dataset,
-        cfg.seed,
+    trainer = RepresentationTrainer(cfg, splits.train, splits.val, run=run).fit()
+    path = trainer.export(cfg.output_dir, d.dataset)
+    logger.info(
+        "representation stage complete (best epoch %d) -> %s",
+        trainer.best_epoch,
+        path,
     )
-    logger.info("Stage I complete (best epoch %d) -> %s", state.best_epoch, path)
     run.finish()
 
 
