@@ -10,13 +10,17 @@ Stage II. Generic parameter checkpointing for any ``nnx`` module lives in
 from spade.training.base import Trainer
 from spade.training.checkpoint import load_params_into, save_params
 from spade.training.generative import GenerativeTrainer, load_generative_model
-from spade.training.representation import RepresentationTrainer
+from spade.training.representation import (
+    RepresentationTrainer,
+    load_representation_model,
+)
 
 __all__ = [
     "Trainer",
     "RepresentationTrainer",
     "GenerativeTrainer",
     "load_generative_model",
+    "load_representation_model",
     "save_params",
     "load_params_into",
 ]
