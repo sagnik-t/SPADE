@@ -60,6 +60,8 @@ class GenerativeConfig:
     gp_lambda: float = 10.0             # gradient-penalty weight
     moment_lambda: float = 1.0         # mean/covariance moment-matching weight
     lr: float = 1e-4
+    adam_b1: float = 0.0                # WGAN-GP Adam betas (Gulrajani et al.)
+    adam_b2: float = 0.9
     batch_size: int = 256
     epochs: int = 500
 
