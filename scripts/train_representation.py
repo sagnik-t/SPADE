@@ -39,11 +39,13 @@ def main() -> None:
 
     run = init_wandb(cfg, project=cfg.wandb_project, name=cfg.name, mode=cfg.wandb_mode)
     trainer = RepresentationTrainer(cfg, splits.train, splits.val, run=run).fit()
-    path = trainer.export(cfg.output_dir, d.dataset)
+    emb_path = trainer.export(cfg.output_dir, d.dataset)          # Z_u/Z_i for Stage II
+    model_path = trainer.export_model(cfg.output_dir, d.dataset)  # gate/decoder for Stage III
     logger.info(
-        "representation stage complete (best epoch %d) -> %s",
+        "representation stage complete (best epoch %d) -> %s, %s",
         trainer.best_epoch,
-        path,
+        emb_path,
+        model_path,
     )
     run.finish()
 
