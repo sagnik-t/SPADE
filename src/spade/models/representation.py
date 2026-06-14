@@ -8,7 +8,7 @@ training the encoders are frozen and their outputs exported for Stage II.
 
 Convenience methods encode ids and score pairs; the actual loss assembly lives in
 :mod:`spade.models.losses` and the training loop in
-:mod:`spade.models.train_stage1`.
+:class:`spade.training.RepresentationTrainer`.
 """
 
 from __future__ import annotations
