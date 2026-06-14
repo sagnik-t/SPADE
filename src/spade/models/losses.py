@@ -16,15 +16,19 @@ these functions pure and deterministic.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import jax.numpy as jnp
 import optax
-from flax import nnx
+
+if TYPE_CHECKING:
+    from spade.models.representation import RepresentationModel
 
 __all__ = [
     "gate_bce_loss",
     "rating_nll_loss",
     "embedding_l2",
-    "stage1_loss",
+    "representation_loss",
 ]
 
 
@@ -54,7 +58,7 @@ def rating_nll_loss(
     ).mean()
 
 
-def embedding_l2(model: nnx.Module) -> jnp.ndarray:
+def embedding_l2(model: RepresentationModel) -> jnp.ndarray:
     """Sum of squared L2 norms of the two encoder embedding tables.
 
     Regularizes representation magnitude (paper's embedding-norm penalty) without
@@ -64,18 +68,18 @@ def embedding_l2(model: nnx.Module) -> jnp.ndarray:
         model.user_encoder.embedding.embedding[...],
         model.item_encoder.embedding.embedding[...],
     ]
-    return sum(jnp.sum(jnp.square(t)) for t in tables)
+    return jnp.sum(jnp.stack([jnp.sum(jnp.square(t)) for t in tables]))
 
 
-def stage1_loss(
-    model: nnx.Module,
+def representation_loss(
+    model: RepresentationModel,
     u: jnp.ndarray,
     i_pos: jnp.ndarray,
     i_neg: jnp.ndarray,
     rating_idx: jnp.ndarray,
     l2_lambda: float,
 ) -> tuple[jnp.ndarray, dict[str, jnp.ndarray]]:
-    """Assemble the joint Stage I loss and a dict of its components.
+    """Assemble the joint representation-stage loss and its component dict.
 
     ``u``/``i_pos`` are aligned observed pairs ``(B,)``; ``i_neg`` is ``(B, n_neg)``
     sampled negative items for the same users; ``rating_idx`` are the observed
