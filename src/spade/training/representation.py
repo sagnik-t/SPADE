@@ -32,8 +32,9 @@ from spade.models.decoder import RatingVocab
 from spade.models.losses import representation_loss
 from spade.models.representation import RepresentationModel
 from spade.training.base import Trainer
+from spade.training.checkpoint import load_params_into, save_params
 
-__all__ = ["RepresentationTrainer"]
+__all__ = ["RepresentationTrainer", "load_representation_model"]
 
 
 @nnx.jit
@@ -173,3 +174,46 @@ class RepresentationTrainer(Trainer):
         )
         self.logger.info("exported Z_u%s, Z_i%s to %s", z_u.shape, z_i.shape, path)
         return path
+
+    def export_model(self, output_dir: str | Path, dataset: str) -> Path:
+        """Persist the full trained model (gate/decoder/encoders) for Stage III.
+
+        The embedding export feeds Stage II, but Stage III reuses the *frozen
+        gate and decoder*, so their parameters — plus the dims and rating
+        vocabulary needed to rebuild the module — are checkpointed separately.
+        """
+        path = Path(output_dir) / dataset / f"representation_model_seed_{self.seed}.npz"
+        save_params(
+            self.model,
+            path,
+            n_users=self.train.n_users,
+            n_items=self.train.n_items,
+            n_levels=self.vocab.n_levels,
+            rating_values=self.vocab.values,
+        )
+        self.logger.info("exported representation model -> %s", path)
+        return path
+
+
+def load_representation_model(
+    path: str | Path,
+    cfg: ExperimentConfig,
+    *,
+    seed: int = 0,
+) -> tuple[RepresentationModel, RatingVocab]:
+    """Rebuild a :class:`RepresentationModel` and its vocab from an export.
+
+    Returns the model with restored parameters (frozen gate/decoder ready for
+    synthesis) and the :class:`RatingVocab` for decoding class indices to ratings.
+    """
+    loaded = np.load(path)
+    model = RepresentationModel(
+        int(loaded["_n_users"]),
+        int(loaded["_n_items"]),
+        int(loaded["_n_levels"]),
+        cfg.representation,
+        rngs=nnx.Rngs(seed),
+    )
+    load_params_into(model, path)
+    vocab = RatingVocab(values=np.asarray(loaded["_rating_values"]))
+    return model, vocab
