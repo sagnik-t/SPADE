@@ -1,4 +1,4 @@
-"""Stage I model tests: shapes, determinism, valid distributions, learning.
+"""Representation-stage model tests: shapes, determinism, distributions, learning.
 
 Runs on CPU JAX. A tiny synthetic dataset keeps everything fast while still
 exercising the joint training loop, early stopping, and embedding export.
@@ -17,10 +17,9 @@ from spade.models import (
     RatingVocab,
     RepresentationModel,
     UserEncoder,
-    export_stage1,
-    stage1_loss,
-    train_stage1,
+    representation_loss,
 )
+from spade.training import RepresentationTrainer
 
 
 def _store(n_users=30, n_items=24, density=0.35, seed=0):
@@ -92,7 +91,7 @@ def test_rating_vocab_rejects_unknown_value():
 # --------------------------------------------------------------------------- #
 # Loss                                                                        #
 # --------------------------------------------------------------------------- #
-def test_stage1_loss_components_present_and_finite():
+def test_representation_loss_components_present_and_finite():
     store = _store()
     cfg = ExperimentConfig()
     vocab = RatingVocab.from_ratings(store.ratings)
@@ -103,7 +102,7 @@ def test_stage1_loss_components_present_and_finite():
     i_pos = jnp.asarray(store.item_idx[:16])
     i_neg = jnp.asarray(np.zeros((16, 5), dtype=np.int64))
     ridx = jnp.asarray(vocab.to_index(store.ratings[:16]))
-    total, parts = stage1_loss(model, u, i_pos, i_neg, ridx, l2_lambda=1e-5)
+    total, parts = representation_loss(model, u, i_pos, i_neg, ridx, l2_lambda=1e-5)
     assert set(parts) == {"gate", "rating", "l2", "total"}
     assert jnp.isfinite(total)
     assert parts["gate"] > 0 and parts["rating"] > 0
@@ -130,20 +129,20 @@ def test_training_reduces_loss_and_exports(tmp_path):
     cfg = _tiny_cfg(epochs=20)
     splits = split_store(store, 0.15, 0.15, seed=1)
 
-    state = train_stage1(cfg, splits.train, splits.val)
-    assert len(state.history) >= 1
-    first, last = state.history[0]["total"], state.history[-1]["total"]
+    trainer = RepresentationTrainer(cfg, splits.train, splits.val).fit()
+    assert len(trainer.history) >= 1
+    first, last = trainer.history[0]["total"], trainer.history[-1]["total"]
     assert last < first  # joint objective decreases on validation
 
-    z_u, z_i = state.model.export_embeddings(store.n_users, store.n_items)
+    z_u, z_i = trainer.model.export_embeddings(store.n_users, store.n_items)
     assert z_u.shape == (store.n_users, cfg.representation.latent_dim)
     assert z_i.shape == (store.n_items, cfg.representation.latent_dim)
     assert np.isfinite(z_u).all() and np.isfinite(z_i).all()
 
-    path = export_stage1(state, store.n_users, store.n_items, tmp_path, "synthetic", 1)
+    path = trainer.export(tmp_path, "synthetic")
     loaded = np.load(path)
     assert loaded["z_users"].shape == z_u.shape
-    assert loaded["rating_values"].tolist() == state.vocab.values.tolist()
+    assert loaded["rating_values"].tolist() == trainer.vocab.values.tolist()
 
 
 def test_early_stopping_triggers():
@@ -151,6 +150,6 @@ def test_early_stopping_triggers():
     cfg = _tiny_cfg(epochs=200)
     cfg.representation.early_stop_patience = 3
     splits = split_store(store, 0.15, 0.15, seed=2)
-    state = train_stage1(cfg, splits.train, splits.val)
+    trainer = RepresentationTrainer(cfg, splits.train, splits.val).fit()
     # With patience=3 it must stop well before the 200-epoch cap.
-    assert len(state.history) < 200
+    assert len(trainer.history) < 200
