@@ -81,6 +81,20 @@ class SynthesisModel:
         c = math.ceil(product)
         return max(1, min(c, self.n_synth_items))
 
+    def sample_latents(self, key: jax.Array) -> tuple[jnp.ndarray, jnp.ndarray]:
+        """Re-derive the synthetic user/item latent clouds for a synthesis key.
+
+        Uses the *same* key derivation as :meth:`synthesize` (the first two of
+        four splits seed the user and item draws), so calling this with the key a
+        dataset was synthesized under reproduces exactly the latents that produced
+        it. The evaluation stage needs these clouds to place synthetic entities in
+        the reference space and to measure latent Wasserstein distance.
+        """
+        k_users, k_items, _, _ = jax.random.split(key, 4)
+        z_users = self.generative.sample_users(k_users, self.n_synth_users)
+        z_items = self.generative.sample_items(k_items, self.n_synth_items)
+        return z_users, z_items
+
     def synthesize(self, key: jax.Array) -> SyntheticDataset:
         """Run the full pipeline and return the discrete synthetic dataset."""
         k_users, k_items, k_gate, k_rating = jax.random.split(key, 4)
