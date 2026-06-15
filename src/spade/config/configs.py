@@ -79,11 +79,37 @@ class SynthesisConfig:
 
 @dataclass
 class EvalConfig:
-    """Evaluation protocol."""
+    """Evaluation protocol.
+
+    Covers the shared reference space (a fixed MF/NCF trained on real data), the
+    transductive map that places synthetic entities into it, and the metric
+    knobs. ``ref_*`` size and train the reference models; ``map_ridge`` is the
+    L2 strength of the least-squares map from Stage I latents to the reference
+    space; ``neighbor_k`` is the neighborhood size for PGPS/NDI; ``tstr_model``
+    picks the downstream recommender for the TS-TR utility check.
+    """
 
     topk: list[int] = field(default_factory=lambda: [10, 20])
     reference_models: list[str] = field(default_factory=lambda: ["mf", "ncf"])
     n_seeds: int = 5
+
+    # Reference models (MF + NCF), trained on the real train split.
+    ref_dim: int = 32                   # reference embedding dimension
+    ref_hidden: list[int] = field(default_factory=lambda: [64, 32])  # NCF tower
+    ref_epochs: int = 50
+    ref_lr: float = 1e-3
+    ref_l2: float = 1e-5                # embedding-norm regularization
+    ref_batch_size: int = 1024
+
+    # Transductive linear map: Z_real -> reference space (ridge least squares).
+    map_ridge: float = 1e-2
+
+    # PGPS / NDI neighborhood size (the k in top-k preference geometry).
+    neighbor_k: int = 10
+
+    # TS-TR downstream recommender + its (synthetic) holdout fraction.
+    tstr_model: str = "mf"              # mf | ncf
+    tstr_test_frac: float = 0.1
 
 
 @dataclass
