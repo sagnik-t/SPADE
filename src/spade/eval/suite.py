@@ -26,10 +26,7 @@ from spade.config.configs import ExperimentConfig
 from spade.data import Splits, load_splits
 from spade.eval.distributions import degree_ks, gaussian_w2
 from spade.eval.downstream import ts_tr
-from spade.eval.ndi import ndi
-from spade.eval.pgps import pgps
-from spade.eval.reference import build_reference_space
-from spade.eval.transductive import fit_transductive
+from spade.eval.geometry import geometry_metrics
 from spade.synthesis import SyntheticDataset
 from spade.synthesis.synthesizer import SynthesisModel
 from spade.training import load_generative_model, load_representation_model
@@ -38,33 +35,6 @@ from spade.utils import get_logger, jax_key
 __all__ = ["run_evaluation"]
 
 logger = get_logger(__name__)
-
-
-def _geometry_metrics(
-    cfg: ExperimentConfig,
-    z_users_real: np.ndarray,
-    z_items_real: np.ndarray,
-    z_users_synth: np.ndarray,
-    z_items_synth: np.ndarray,
-    train,
-) -> dict[str, dict[str, float]]:
-    """PGPS + NDI per reference model, via the transductive map into its space."""
-    ecfg = cfg.eval
-    out: dict[str, dict[str, float]] = {}
-    for kind in ecfg.reference_models:
-        logger.info("building %s reference space", kind)
-        ref = build_reference_space(train, ecfg, kind=kind, seed=cfg.seed)
-        embed = fit_transductive(
-            z_users_real, z_items_real, ref.user_emb, ref.item_emb, ecfg.map_ridge
-        )
-        synth_user_ref = embed.embed_users(z_users_synth)
-        synth_item_ref = embed.embed_items(z_items_synth)
-
-        pgps_res = pgps(ref.item_emb, synth_item_ref, ecfg.neighbor_k)
-        ndi_res = ndi(ref.user_emb, synth_user_ref, ecfg.neighbor_k)
-        out[kind] = {**pgps_res.as_dict(), **ndi_res.as_dict()}
-        logger.info("%s | %s", kind, out[kind])
-    return out
 
 
 def run_evaluation(cfg: ExperimentConfig) -> dict:
@@ -105,8 +75,8 @@ def run_evaluation(cfg: ExperimentConfig) -> dict:
     z_u_synth = np.asarray(z_u_synth)
     z_i_synth = np.asarray(z_i_synth)
 
-    geometry = _geometry_metrics(
-        cfg, z_users_real, z_items_real, z_u_synth, z_i_synth, train
+    geometry = geometry_metrics(
+        train, cfg.eval, z_users_real, z_items_real, z_u_synth, z_i_synth, seed=cfg.seed
     )
 
     latent = {

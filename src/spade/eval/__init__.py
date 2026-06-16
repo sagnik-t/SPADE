@@ -9,6 +9,7 @@ utility comparison. :func:`run_evaluation` runs the whole battery for one seed.
 
 from spade.eval.distributions import degree_ks, gaussian_w2, ks_distance
 from spade.eval.downstream import TSTRResult, evaluate_ranking, ts_tr
+from spade.eval.geometry import geometry_metrics
 from spade.eval.metrics import (
     average_precision_at_k,
     ndcg_at_k,
@@ -56,5 +57,6 @@ __all__ = [
     "gaussian_w2",
     "ks_distance",
     "degree_ks",
+    "geometry_metrics",
     "run_evaluation",
 ]
