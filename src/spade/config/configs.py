@@ -17,6 +17,7 @@ __all__ = [
     "GenerativeConfig",
     "SynthesisConfig",
     "EvalConfig",
+    "BaselineConfig",
     "ExperimentConfig",
 ]
 
@@ -113,6 +114,44 @@ class EvalConfig:
 
 
 @dataclass
+class BaselineConfig:
+    """Hyperparameters for the comparison generators (Phase 6).
+
+    Synthetic universe sizes and target sparsity are taken from
+    :class:`SynthesisConfig`/the data so every baseline expands to the same
+    ``U'``/``I'`` and density as SPADE — only the *generation mechanism* differs.
+    """
+
+    # Noise-Perturbed MF: MF source + isotropic embedding noise.
+    noise_mf_dim: int = 32
+    noise_mf_epochs: int = 50
+    noise_mf_lr: float = 1e-3
+    noise_std: float = 0.1
+
+    # GANRS: DeepMF source -> vanilla GAN over interaction tuples -> K-Means.
+    deepmf_dim: int = 32
+    deepmf_epochs: int = 50
+    gan_noise_dim: int = 32
+    gan_hidden: list[int] = field(default_factory=lambda: [128, 128])
+    gan_epochs: int = 100
+    gan_lr: float = 1e-4
+    gan_batch_size: int = 256
+    gan_n_generate: int = 50_000
+
+    # VAE over interaction tuples.
+    vae_dim: int = 32
+    vae_latent: int = 16
+    vae_hidden: list[int] = field(default_factory=lambda: [128])
+    vae_epochs: int = 50
+    vae_lr: float = 1e-3
+    vae_beta: float = 1.0
+    vae_n_generate: int = 50_000
+
+    # K-Means identifier recovery (GANRS, VAE).
+    kmeans_iters: int = 25
+
+
+@dataclass
 class ExperimentConfig:
     """Top-level config composing every stage plus run/logging settings."""
 
@@ -126,3 +165,4 @@ class ExperimentConfig:
     generative: GenerativeConfig = field(default_factory=GenerativeConfig)
     synthesis: SynthesisConfig = field(default_factory=SynthesisConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
+    baselines: BaselineConfig = field(default_factory=BaselineConfig)
