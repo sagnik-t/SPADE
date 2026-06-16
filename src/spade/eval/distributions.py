@@ -22,6 +22,8 @@ Both return values in ``[0, ∞)`` (W₂) / ``[0, 1]`` (KS) where smaller is clo
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 from scipy import linalg, stats
 
@@ -55,9 +57,9 @@ def gaussian_w2(x: np.ndarray, y: np.ndarray) -> float:
 
 def _sqrtm_psd(mat: np.ndarray) -> np.ndarray:
     """Real symmetric PSD matrix square root (imaginary dust discarded)."""
-    root = linalg.sqrtm(mat)
+    root = np.asarray(cast(Any, linalg.sqrtm(mat)))
     if np.iscomplexobj(root):
-        root = root.real
+        root = np.real(root)
     return np.asarray(root, dtype=np.float64)
 
 
@@ -67,7 +69,9 @@ def ks_distance(a: np.ndarray, b: np.ndarray) -> float:
     b = np.asarray(b)
     if a.size == 0 or b.size == 0:
         return 0.0
-    return float(stats.ks_2samp(a, b).statistic)
+    # cast to Any so static checkers don't depend on the KstestResult
+    # namedtuple's ``statistic`` field being declared in SciPy's stubs.
+    return float(cast(Any, stats.ks_2samp(a, b)).statistic)
 
 
 def degree_ks(real: InteractionStore, synth: InteractionStore) -> dict[str, float]:
