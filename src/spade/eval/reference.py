@@ -36,6 +36,8 @@ __all__ = [
     "ReferenceSpace",
     "build_recommender",
     "train_recommender",
+    "train_mf",
+    "optimize_recommender",
     "build_reference_space",
 ]
 
@@ -63,6 +65,15 @@ class MFModel(nnx.Module):
 
     def item_table(self) -> np.ndarray:
         return np.asarray(self.item_emb.embedding[...])
+
+    def user_bias_table(self) -> np.ndarray:
+        return np.asarray(self.user_bias.embedding[...]).squeeze(-1)
+
+    def item_bias_table(self) -> np.ndarray:
+        return np.asarray(self.item_bias.embedding[...]).squeeze(-1)
+
+    def global_bias_value(self) -> float:
+        return float(self.global_bias[...])
 
     def all_item_scores(self, u: jnp.ndarray) -> jnp.ndarray:
         """Scores of users ``u`` against every item, shape ``(len(u), n_items)``."""
@@ -151,31 +162,32 @@ def _train_step(model, optimizer, u, i, r, l2_lambda):
     return loss
 
 
-def train_recommender(
+def optimize_recommender(
+    model: Recommender,
     store: InteractionStore,
-    cfg: EvalConfig,
     *,
-    kind: str = "mf",
+    epochs: int,
+    lr: float,
+    l2: float,
+    batch_size: int,
     seed: int = 0,
+    tag: str = "recommender",
 ) -> Recommender:
-    """Fit a reference recommender on ``store`` (explicit-rating MSE + L2).
+    """Fit ``model`` on ``store`` in place (explicit-rating MSE + embedding L2).
 
-    Trains for ``cfg.ref_epochs`` with mini-batch Adam, reshuffling each epoch.
-    The model is returned trained; callers extract embeddings or rank items.
+    Mini-batch Adam with a per-epoch reshuffle. Shared by the reference space and
+    the baselines so every MF/NCF is trained the same way.
     """
-    model = build_recommender(kind, store.n_users, store.n_items, cfg, seed=seed)
-    optimizer = nnx.Optimizer(model, optax.adam(cfg.ref_lr), wrt=nnx.Param)
+    optimizer = nnx.Optimizer(model, optax.adam(lr), wrt=nnx.Param)
     rng = np.random.default_rng(seed)
-
-    u_all = store.user_idx
-    i_all = store.item_idx
+    u_all, i_all = store.user_idx, store.item_idx
     r_all = store.ratings.astype(np.float32)
     n = store.nnz
-    for epoch in range(cfg.ref_epochs):
+    for epoch in range(epochs):
         perm = rng.permutation(n)
         last = 0.0
-        for start in range(0, n, cfg.ref_batch_size):
-            sl = perm[start : start + cfg.ref_batch_size]
+        for start in range(0, n, batch_size):
+            sl = perm[start : start + batch_size]
             last = float(
                 _train_step(
                     model,
@@ -183,11 +195,45 @@ def train_recommender(
                     jnp.asarray(u_all[sl]),
                     jnp.asarray(i_all[sl]),
                     jnp.asarray(r_all[sl]),
-                    cfg.ref_l2,
+                    l2,
                 )
             )
-        if epoch % 10 == 0 or epoch == cfg.ref_epochs - 1:
-            logger.info("reference %s | epoch %d | loss %.4f", kind, epoch, last)
+        if epoch % 10 == 0 or epoch == epochs - 1:
+            logger.info("%s | epoch %d | loss %.4f", tag, epoch, last)
+    return model
+
+
+def train_recommender(
+    store: InteractionStore,
+    cfg: EvalConfig,
+    *,
+    kind: str = "mf",
+    seed: int = 0,
+) -> Recommender:
+    """Fit a reference recommender on ``store`` using :class:`EvalConfig` knobs."""
+    model = build_recommender(kind, store.n_users, store.n_items, cfg, seed=seed)
+    return optimize_recommender(
+        model, store, epochs=cfg.ref_epochs, lr=cfg.ref_lr, l2=cfg.ref_l2,
+        batch_size=cfg.ref_batch_size, seed=seed, tag=f"reference {kind}",
+    )
+
+
+def train_mf(
+    store: InteractionStore,
+    *,
+    dim: int,
+    epochs: int,
+    lr: float = 1e-3,
+    l2: float = 1e-5,
+    batch_size: int = 1024,
+    seed: int = 0,
+) -> MFModel:
+    """Standalone biased-MF trainer for the baselines (returns the trained model)."""
+    model = MFModel(store.n_users, store.n_items, dim, rngs=nnx.Rngs(seed))
+    optimize_recommender(
+        model, store, epochs=epochs, lr=lr, l2=l2, batch_size=batch_size,
+        seed=seed, tag="baseline mf",
+    )
     return model
 
 
