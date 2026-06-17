@@ -110,10 +110,16 @@ class SynthesisModel:
         users = np.repeat(np.arange(n_u, dtype=np.int64), candidates.shape[1])
         items = candidates.reshape(-1).astype(np.int64)
 
-        probs = self._gate_probs(z_users, z_items, users, items)
-        unif = np.asarray(jax.random.uniform(k_gate, (probs.shape[0],)))
-        keep = unif < probs
-        kept_users, kept_items = users[keep], items[keep]
+        if self.cfg.gating:
+            probs = self._gate_probs(z_users, z_items, users, items)
+            unif = np.asarray(jax.random.uniform(k_gate, (probs.shape[0],)))
+            keep = unif < probs
+            kept_users, kept_items = users[keep], items[keep]
+        else:
+            # Ablation: bypass the gate and keep every candidate. Sparsity is then
+            # only the C/I' candidate bound, not the gate's learned probability —
+            # which is exactly what this diagnostic exposes.
+            kept_users, kept_items = users, items
 
         ratings = self._sample_ratings(z_users, z_items, kept_users, kept_items, k_rating)
         synth = SyntheticDataset(

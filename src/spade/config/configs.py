@@ -76,6 +76,7 @@ class SynthesisConfig:
     gamma: float = 5.0                  # ANN oversampling buffer
     ann_metric: str = "cosine"
     score_batch_size: int = 100_000     # pairs per gate/decoder scoring chunk
+    gating: bool = True                 # apply the interaction gate (off = ablation)
 
 
 @dataclass
