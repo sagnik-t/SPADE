@@ -66,6 +66,7 @@ def init_wandb(
     project: str = "spade",
     name: str | None = None,
     mode: str = "online",
+    group: str | None = None,
 ) -> WandbRun:
     """Initialize a W&B run, returning a :class:`WandbRun` (possibly inactive)."""
     if mode == "disabled":
@@ -77,6 +78,7 @@ def init_wandb(
         return WandbRun(None)
 
     run = wandb.init(
-        project=project, name=name, mode=cast(Any, mode), config=_to_dict(config)
+        project=project, name=name, mode=cast(Any, mode),
+        config=_to_dict(config), group=group,
     )
     return WandbRun(run)
