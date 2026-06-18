@@ -3,8 +3,8 @@
 SPADE is built in stages that train sequentially, so this umbrella is assembled
 by *composition of already-trained submodels* rather than constructed from
 scratch: train the :class:`RepresentationModel`, freeze it and fit the
-:class:`GenerativeModel` on its exported latents, then (Phase 4) attach the
-synthesis model. Holding them on one object gives a single handle for inference
+:class:`GenerativeModel` on its exported latents, then attach the synthesis
+model. Holding them on one object gives a single handle for inference
 and serialization once every stage exists.
 
 The synthesis stage is not implemented yet; ``synthesis`` is reserved and stays
@@ -28,7 +28,7 @@ class SPADE(nnx.Module):
 
     Submodels are injected after their own training rather than initialized
     here, which keeps the staged freeze-then-fit workflow intact. ``synthesis``
-    is a placeholder for the Stage III model added in Phase 4.
+    is a placeholder for the Stage III synthesis model.
     """
 
     def __init__(
