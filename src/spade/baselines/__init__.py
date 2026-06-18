@@ -1,4 +1,4 @@
-"""Baseline dataset generators and the common generator interface (Phase 6).
+"""Baseline dataset generators and the common generator interface.
 
 Every generator — SPADE (via :class:`SpadeGenerator`) and the five baselines —
 implements :class:`Generator.generate`, returning a :class:`GeneratorOutput` that
