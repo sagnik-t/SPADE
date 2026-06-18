@@ -73,6 +73,7 @@ def run_matrix(
     results_dir: str | Path,
     cache_dir: str | Path | None = None,
     splits_loader: SplitsLoader = default_splits_loader,
+    track: bool = False,
 ) -> list[dict]:
     """Execute (or resume) the full grid; return one flat record per cell.
 
@@ -80,6 +81,11 @@ def run_matrix(
     is the metric dict from :func:`evaluate_output`. Stage models are trained at
     most once per (dataset, ablation, seed) and only when the ``spade`` generator
     is among the cells still to compute.
+
+    With ``track=True``, training curves and per-cell metrics are logged to W&B
+    (honoring ``base_cfg.wandb_mode``): one run per trained stage and one per
+    evaluated cell, named ``<name>-<dataset>-<ablation>-seed<seed>[-<stage|gen>]``.
+    Tracking is off by default so test/offline runs never touch W&B.
     """
     results_dir = Path(results_dir)
     cache_dir = Path(cache_dir) if cache_dir is not None else results_dir / "_stage_cache"
@@ -94,18 +100,27 @@ def run_matrix(
                 paths = {g: cell_dir / f"{g}_seed{seed}.json" for g in generators}
                 missing = [g for g, p in paths.items() if not p.exists()]
 
+                prefix = (
+                    f"{base_cfg.name}-{dataset}-{ablation_name}-seed{seed}"
+                    if track else None
+                )
+
                 if missing:
                     splits = splits_loader(cfg)
                     models = None
                     if "spade" in missing:
                         models = train_spade_stages(
-                            cfg, splits, cache_dir=cache_dir / dataset
+                            cfg, splits, cache_dir=cache_dir / dataset,
+                            wandb_prefix=prefix,
                         )
                     for g in missing:
                         logger.info(
                             "cell %s/%s/%s seed=%d", dataset, ablation_name, g, seed
                         )
-                        cell = run_cell(cfg, g, splits, models=models)
+                        cell = run_cell(
+                            cfg, g, splits, models=models,
+                            wandb_name=f"{prefix}-{g}" if prefix else None,
+                        )
                         paths[g].write_text(json.dumps(cell, indent=2, sort_keys=True))
 
                 for g in generators:
