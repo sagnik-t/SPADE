@@ -1,4 +1,4 @@
-"""End-to-end evaluation suite: every Phase 5 metric over one synthesized run.
+"""End-to-end evaluation suite: every metric over one synthesized run.
 
 Given a trained SPADE run (representation + generative exports) and its saved
 synthetic dataset, :func:`run_evaluation` assembles the shared reference space,
