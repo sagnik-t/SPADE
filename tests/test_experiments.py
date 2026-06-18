@@ -1,4 +1,4 @@
-"""Phase 7 orchestration tests: pipeline, ablations, resumable matrix, aggregation.
+"""Orchestration tests: pipeline, ablations, resumable matrix, aggregation.
 
 Runs the full grid end-to-end on tiny in-memory splits (injected via a custom
 splits loader) with 1–2 epoch stages — checking the orchestration contract
@@ -20,6 +20,7 @@ from spade.experiments import (
     build_summary,
     flatten_cell,
     get_ablation,
+    load_records,
     run_cell,
     run_matrix,
     train_spade_stages,
@@ -73,7 +74,7 @@ def _cfg() -> ExperimentConfig:
     b.gan_noise_dim = b.vae_latent = 8
     b.gan_hidden = b.vae_hidden = [16]
     b.gan_epochs = 1
-    b.gan_n_generate = b.vae_n_generate = 1500
+    b.gen_oversample = 1.0
     b.kmeans_iters = 5
     return cfg
 
@@ -142,17 +143,20 @@ def test_run_cell_spade_requires_models():
 def test_run_matrix_and_resume(tmp_path):
     cfg = _cfg()
     splits = _splits()
-    kwargs = dict(
-        datasets=["tiny"], generators=["spade", "random"], seeds=[0, 1],
-        ablations=["base"], results_dir=tmp_path, splits_loader=_loader(splits),
-    )
-    records = run_matrix(cfg, **kwargs)
+
+    def run():
+        return run_matrix(
+            cfg, datasets=["tiny"], generators=["spade", "random"], seeds=[0, 1],
+            ablations=["base"], results_dir=tmp_path, splits_loader=_loader(splits),
+        )
+
+    records = run()
     assert len(records) == 4  # 2 generators x 2 seeds x 1 ablation
     cell_files = list((tmp_path / "tiny" / "base").glob("*.json"))
     assert len(cell_files) == 4
 
     # Resume: cells are cached, re-run returns the same records without recompute.
-    again = run_matrix(cfg, **kwargs)
+    again = run()
     assert len(again) == 4
     assert {(r["generator"], r["seed"]) for r in again} == {
         ("spade", 0), ("spade", 1), ("random", 0), ("random", 1)
@@ -178,6 +182,34 @@ def test_aggregate_writes_tables(tmp_path):
     written = write_tables(records, tmp_path / "tables")
     assert written["summary"].exists()
     assert (tmp_path / "tables" / "tiny__base.md").exists()
+    assert (tmp_path / "tables" / "tiny__base.tex").exists()
+
+
+def test_load_records_round_trips_and_exports_latex(tmp_path):
+    cfg = _cfg()
+    splits = _splits()
+    rdir = tmp_path / "m"
+    run_matrix(
+        cfg, datasets=["tiny"], generators=["random", "marginal"], seeds=[0, 1],
+        ablations=["base"], results_dir=rdir, splits_loader=_loader(splits),
+    )
+    # Reload the per-cell JSONs from disk into aggregation records.
+    records = load_records(rdir)
+    assert len(records) == 4
+    assert {(r["generator"], r["seed"]) for r in records} == {
+        ("random", 0), ("random", 1), ("marginal", 0), ("marginal", 1)
+    }
+    assert all(set(r) == {"dataset", "ablation", "generator", "seed", "cell"} for r in records)
+
+    # Booktabs LaTeX is well-formed and paper-droppable.
+    write_tables(records, tmp_path / "tables")
+    tex = (tmp_path / "tables" / "tiny__base.tex").read_text()
+    assert r"\toprule" in tex and r"\bottomrule" in tex
+    assert r"\begin{tabular}" in tex and r"\pm" in tex
+
+    # latex=False suppresses the .tex artifact.
+    write_tables(records, tmp_path / "tables_nolatex", latex=False)
+    assert not (tmp_path / "tables_nolatex" / "tiny__base.tex").exists()
 
 
 def test_flatten_cell_includes_degree_and_tstr():
