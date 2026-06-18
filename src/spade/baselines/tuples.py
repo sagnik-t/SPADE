@@ -65,15 +65,24 @@ def recover_universe(
     n_synth_items: int,
     kmeans_iters: int,
     rng: np.random.Generator,
+    max_nnz: int | None = None,
 ) -> tuple[SyntheticDataset, np.ndarray, np.ndarray]:
     """Cluster generated fragments into a discrete universe + synthetic latents.
 
     Returns the de-duplicated :class:`SyntheticDataset` plus the user and item
     cluster centers (the synthetic entity coordinates for the geometry metrics).
+    When ``max_nnz`` is given, the de-duplicated dataset is truncated to that many
+    interactions, so callers that oversample the tuple budget land on a target
+    density rather than over-densifying.
     """
     user_labels, user_centers = kmeans(p_fake, n_synth_users, kmeans_iters, rng)
     item_labels, item_centers = kmeans(q_fake, n_synth_items, kmeans_iters, rng)
     dataset = assemble_dataset(
         user_labels, item_labels, ratings, n_synth_users, n_synth_items
     )
+    if max_nnz is not None and dataset.nnz > max_nnz:
+        dataset = assemble_dataset(
+            dataset.user_idx[:max_nnz], dataset.item_idx[:max_nnz],
+            dataset.ratings[:max_nnz], n_synth_users, n_synth_items,
+        )
     return dataset, user_centers, item_centers
