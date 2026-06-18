@@ -38,6 +38,7 @@ __all__ = [
     "train_recommender",
     "train_mf",
     "optimize_recommender",
+    "optimize_bpr",
     "build_reference_space",
 ]
 
@@ -142,11 +143,15 @@ def build_recommender(
 ) -> Recommender:
     """Construct an untrained reference recommender of the requested ``kind``."""
     rngs = nnx.Rngs(seed)
-    if kind == "mf":
+    # "bpr" shares the biased-MF scoring model; only its training objective
+    # differs (pairwise ranking instead of rating MSE).
+    if kind in ("mf", "bpr"):
         return MFModel(n_users, n_items, cfg.ref_dim, rngs=rngs)
     if kind == "ncf":
         return NCFModel(n_users, n_items, cfg.ref_dim, cfg.ref_hidden, rngs=rngs)
-    raise ValueError(f"unknown reference model {kind!r}; expected 'mf' or 'ncf'")
+    raise ValueError(
+        f"unknown reference model {kind!r}; expected 'mf', 'ncf', or 'bpr'"
+    )
 
 
 @nnx.jit
@@ -203,6 +208,78 @@ def optimize_recommender(
     return model
 
 
+@nnx.jit
+def _bpr_step(model, optimizer, u, pos, neg, l2_lambda):
+    def loss_fn(m):
+        # BPR: maximize the margin between a positive and a sampled negative item.
+        # The user bias and global bias cancel in the (pos - neg) difference; the
+        # item biases (b_pos - b_neg) remain and are learned, as in BPR-MF.
+        x_pos = m(u, pos)
+        x_neg = m(u, neg)
+        ranking = -jnp.mean(jax.nn.log_sigmoid(x_pos - x_neg))
+        reg = (
+            jnp.mean(m.user_emb(u) ** 2)
+            + jnp.mean(m.item_emb(pos) ** 2)
+            + jnp.mean(m.item_emb(neg) ** 2)
+        )
+        return ranking + l2_lambda * reg
+
+    loss, grads = nnx.value_and_grad(loss_fn)(model)
+    optimizer.update(model, grads)
+    return loss
+
+
+def optimize_bpr(
+    model: MFModel,
+    store: InteractionStore,
+    *,
+    epochs: int,
+    lr: float,
+    l2: float,
+    batch_size: int,
+    neg_samples: int = 1,
+    seed: int = 0,
+    tag: str = "bpr",
+) -> MFModel:
+    """Fit ``model`` in place with the BPR pairwise-ranking objective.
+
+    Each observed interaction is a positive ``(u, i)``; ``neg_samples`` negative
+    items per positive are drawn uniformly over the catalog (the standard BPR
+    approximation — occasional false negatives are tolerated). Ratings are ignored:
+    the objective is purely "observed ranks above unobserved", which is the right
+    target for the top-k Recall/NDCG that TS-TR measures.
+    """
+    optimizer = nnx.Optimizer(model, optax.adam(lr), wrt=nnx.Param)
+    rng = np.random.default_rng(seed)
+    u_all, i_all = store.user_idx, store.item_idx
+    n = store.nnz
+    n_items = store.n_items
+    for epoch in range(epochs):
+        perm = rng.permutation(n)
+        last = 0.0
+        for start in range(0, n, batch_size):
+            sl = perm[start : start + batch_size]
+            u_b = u_all[sl]
+            pos_b = i_all[sl]
+            if neg_samples > 1:
+                u_b = np.repeat(u_b, neg_samples)
+                pos_b = np.repeat(pos_b, neg_samples)
+            neg_b = rng.integers(0, n_items, size=u_b.shape[0])
+            last = float(
+                _bpr_step(
+                    model,
+                    optimizer,
+                    jnp.asarray(u_b),
+                    jnp.asarray(pos_b),
+                    jnp.asarray(neg_b),
+                    l2,
+                )
+            )
+        if epoch % 10 == 0 or epoch == epochs - 1:
+            logger.info("%s | epoch %d | loss %.4f", tag, epoch, last)
+    return model
+
+
 def train_recommender(
     store: InteractionStore,
     cfg: EvalConfig,
@@ -210,8 +287,20 @@ def train_recommender(
     kind: str = "mf",
     seed: int = 0,
 ) -> Recommender:
-    """Fit a reference recommender on ``store`` using :class:`EvalConfig` knobs."""
+    """Fit a reference/downstream recommender on ``store`` using EvalConfig knobs.
+
+    ``mf``/``ncf`` are trained with rating MSE; ``bpr`` trains the MF scoring model
+    with the pairwise-ranking objective (the appropriate downstream model for the
+    top-k ranking that TS-TR reports).
+    """
     model = build_recommender(kind, store.n_users, store.n_items, cfg, seed=seed)
+    if kind == "bpr":
+        assert isinstance(model, MFModel)  # build_recommender guarantees this
+        return optimize_bpr(
+            model, store, epochs=cfg.ref_epochs, lr=cfg.ref_lr, l2=cfg.ref_l2,
+            batch_size=cfg.ref_batch_size, neg_samples=cfg.bpr_neg_samples,
+            seed=seed, tag="reference bpr",
+        )
     return optimize_recommender(
         model, store, epochs=cfg.ref_epochs, lr=cfg.ref_lr, l2=cfg.ref_l2,
         batch_size=cfg.ref_batch_size, seed=seed, tag=f"reference {kind}",
