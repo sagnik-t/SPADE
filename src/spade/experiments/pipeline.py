@@ -28,6 +28,7 @@ from spade.data.split import Splits
 from spade.eval.distributions import degree_ks, gaussian_w2
 from spade.eval.downstream import ts_tr
 from spade.eval.geometry import geometry_metrics
+from spade.experiments.aggregate import flatten_cell
 from spade.models.decoder import RatingVocab
 from spade.models.generative import GenerativeModel
 from spade.models.representation import RepresentationModel
@@ -38,7 +39,7 @@ from spade.training import (
     load_representation_model,
 )
 from spade.training.checkpoint import save_params
-from spade.utils import get_logger, jax_key
+from spade.utils import WandbRun, get_logger, init_wandb, jax_key
 
 __all__ = ["SpadeModels", "train_spade_stages", "evaluate_output", "run_cell"]
 
@@ -48,6 +49,19 @@ logger = get_logger(__name__)
 def _sig(section) -> str:
     """Short stable signature of a config dataclass section (for cache keys)."""
     return hashlib.md5(repr(dataclasses.asdict(section)).encode()).hexdigest()[:8]
+
+
+def _run(cfg: ExperimentConfig, name: str | None, group: str | None = None) -> WandbRun | None:
+    """Open a W&B run for a stage/cell, or ``None`` when tracking is off.
+
+    ``name is None`` means the caller opted out of tracking entirely; otherwise
+    :func:`init_wandb` still returns an inactive (no-op) handle when the configured
+    ``wandb_mode`` is ``disabled`` or wandb is unavailable, so callers never have
+    to special-case it.
+    """
+    if name is None:
+        return None
+    return init_wandb(cfg, project=cfg.wandb_project, name=name, mode=cfg.wandb_mode, group=group)
 
 
 @dataclass
@@ -60,9 +74,19 @@ class SpadeModels:
 
 
 def train_spade_stages(
-    cfg: ExperimentConfig, splits: Splits, *, cache_dir: str | Path
+    cfg: ExperimentConfig,
+    splits: Splits,
+    *,
+    cache_dir: str | Path,
+    wandb_prefix: str | None = None,
 ) -> SpadeModels:
-    """Train (or load from cache) SPADE's representation and generative stages."""
+    """Train (or load from cache) SPADE's representation and generative stages.
+
+    When ``wandb_prefix`` is given, each stage that is actually trained (not loaded
+    from cache) logs its per-epoch curves to its own W&B run named
+    ``<wandb_prefix>-representation`` / ``<wandb_prefix>-generative``. Cached stages
+    log nothing, since there is no training to track.
+    """
     cache = Path(cache_dir)
     cache.mkdir(parents=True, exist_ok=True)
     train = splits.train
@@ -73,7 +97,10 @@ def train_spade_stages(
         representation, vocab = load_representation_model(rep_path, cfg, seed=cfg.seed)
     else:
         logger.info("training representation stage -> %s", rep_path.name)
-        trainer = RepresentationTrainer(cfg, train, splits.val).fit()
+        run = _run(cfg, f"{wandb_prefix}-representation" if wandb_prefix else None, group=wandb_prefix)
+        trainer = RepresentationTrainer(cfg, train, splits.val, run=run).fit()
+        if run is not None:
+            run.finish()
         save_params(
             trainer.model, rep_path,
             n_users=train.n_users, n_items=train.n_items,
@@ -85,8 +112,11 @@ def train_spade_stages(
         generative = load_generative_model(gen_path, cfg, seed=cfg.seed)
     else:
         logger.info("training generative stage -> %s", gen_path.name)
+        run = _run(cfg, f"{wandb_prefix}-generative" if wandb_prefix else None, group=wandb_prefix)
         z_u, z_i = representation.export_embeddings(train.n_users, train.n_items)
-        gtrainer = GenerativeTrainer(cfg, z_u, z_i).fit()
+        gtrainer = GenerativeTrainer(cfg, z_u, z_i, run=run).fit()
+        if run is not None:
+            run.finish()
         save_params(
             gtrainer.model, gen_path,
             latent_dim=gtrainer.model.latent_dim, noise_dim=cfg.generative.noise_dim,
@@ -139,11 +169,13 @@ def run_cell(
     splits: Splits,
     *,
     models: SpadeModels | None = None,
+    wandb_name: str | None = None,
 ) -> dict:
     """Generate with one generator and evaluate it.
 
     ``models`` are required only for the ``spade`` generator; baselines build
-    themselves from the train store and config.
+    themselves from the train store and config. When ``wandb_name`` is given, the
+    cell's flat scalar metrics are logged to a W&B run of that name.
     """
     train = splits.train
     if generator_name == "spade":
@@ -156,4 +188,11 @@ def run_cell(
         generator = BASELINE_REGISTRY[generator_name](train, cfg)
 
     output = generator.generate(jax_key(cfg.seed))
-    return evaluate_output(train, splits.test, output, cfg, seed=cfg.seed)
+    cell = evaluate_output(train, splits.test, output, cfg, seed=cfg.seed)
+
+    group = wandb_name.rsplit("-", 1)[0] if wandb_name else None
+    run = _run(cfg, wandb_name, group=group)
+    if run is not None:
+        run.log(flatten_cell(cell))
+        run.finish()
+    return cell
