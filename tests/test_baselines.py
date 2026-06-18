@@ -1,4 +1,4 @@
-"""Phase 6 baseline tests: every generator yields a valid synthetic dataset.
+"""Baseline tests: every generator yields a valid synthetic dataset.
 
 Runs on CPU JAX. Networks train for 1–2 epochs on tiny stores — the tests check
 the common-interface contract (universe sizes, index ranges, rating support,
@@ -57,13 +57,12 @@ def _cfg(seed=0) -> ExperimentConfig:
     b.gan_noise_dim = 8
     b.gan_hidden = [16]
     b.gan_epochs = 1
-    b.gan_n_generate = 2000
     b.vae_dim = 8
     b.vae_latent = 4
     b.vae_hidden = [16]
     b.vae_epochs = 1
-    b.vae_n_generate = 2000
     b.kmeans_iters = 5
+    b.gen_oversample = 1.0
     return cfg
 
 
