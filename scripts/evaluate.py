@@ -1,4 +1,4 @@
-"""Evaluate a synthesized SPADE run against the full Phase 5 metric suite.
+"""Evaluate a synthesized SPADE run against the full metric suite.
 
 Loads the representation/generative exports and the saved synthetic dataset for
 the configured dataset/seed, computes PGPS + NDI (per reference model), latent
