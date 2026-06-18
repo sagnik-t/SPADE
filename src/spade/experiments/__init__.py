@@ -1,4 +1,4 @@
-"""Experiment orchestration (Phase 7).
+"""Experiment orchestration.
 
 Ties the whole project together: trains SPADE once per (dataset, seed), runs every
 generator (SPADE + baselines) through the metric suite, sweeps the registered
@@ -12,7 +12,12 @@ from spade.experiments.ablations import (
     Ablation,
     get_ablation,
 )
-from spade.experiments.aggregate import build_summary, flatten_cell, write_tables
+from spade.experiments.aggregate import (
+    build_summary,
+    flatten_cell,
+    load_records,
+    write_tables,
+)
 from spade.experiments.matrix import cell_config, default_splits_loader, run_matrix
 from spade.experiments.pipeline import (
     SpadeModels,
@@ -33,6 +38,7 @@ __all__ = [
     "cell_config",
     "default_splits_loader",
     "run_matrix",
+    "load_records",
     "flatten_cell",
     "build_summary",
     "write_tables",
