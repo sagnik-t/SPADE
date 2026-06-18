@@ -1,4 +1,4 @@
-"""Evaluation suite (Phase 5).
+"""Evaluation suite.
 
 A fixed reference space (MF/NCF on real data) plus a transductive linear map from
 SPADE's Stage I latents lets the novel geometry metrics — PGPS and NDI — compare
