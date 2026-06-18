@@ -10,7 +10,10 @@ cached as JSON and skipped on re-run.
         --seeds 0 1 2 3 4 --ablations base alpha_1.5 alpha_3.0 latent_reg_off gating_off
 
 All other flags are the usual nested config flags (e.g. ``--representation.epochs``).
-Amazon stays deferred until its subset is pinned; full-scale runs belong on GPU.
+Training curves and per-cell metrics are logged to W&B (one run per trained stage
+and per evaluated cell); pass ``--wandb-mode disabled`` to turn that off, or
+``offline`` to log locally. Amazon stays deferred until its subset is pinned;
+full-scale runs belong on GPU.
 """
 
 from __future__ import annotations
@@ -48,6 +51,7 @@ def main() -> None:
         seeds=known.seeds,
         ablations=known.ablations,
         results_dir=results_dir,
+        track=True,
     )
 
     tables_dir = Path(cfg.output_dir) / "tables"
