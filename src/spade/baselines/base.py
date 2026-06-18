@@ -1,6 +1,6 @@
 """Common generator interface for SPADE and its baselines.
 
-Phase 7's experiment harness must treat every dataset generator uniformly, so
+The experiment harness must treat every dataset generator uniformly, so
 each one — SPADE's synthesis pipeline and all five baselines — implements the
 same :class:`Generator` contract: ``generate(key)`` returns a
 :class:`GeneratorOutput` bundling a discrete :class:`SyntheticDataset` with an
