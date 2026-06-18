@@ -1,4 +1,4 @@
-"""Phase 5 evaluation-suite tests: reference models, transductive map, metrics.
+"""Evaluation-suite tests: reference models, transductive map, metrics.
 
 Runs on CPU JAX with NumPy/SciPy. Reference recommenders are trained for only a
 couple of epochs on tiny synthetic stores — the tests check shapes, ranges,
@@ -218,3 +218,28 @@ def test_ts_tr_runs_and_reports_relperf():
     flat = res.as_dict()
     assert any(k.startswith("relperf_") for k in flat)
     assert any(k.startswith("tstr_synth_") for k in flat)
+
+
+def test_bpr_recommender_runs_and_scores():
+    cfg = _eval_cfg()
+    cfg.eval.bpr_neg_samples = 2  # exercise the multi-negative repeat path
+    train = _dense_store(n_users=15, n_items=12, per_user=6, seed=10)
+    test = _dense_store(n_users=15, n_items=12, per_user=2, seed=11)
+    model = train_recommender(train, cfg.eval, kind="bpr", seed=cfg.seed)
+    out = evaluate_ranking(model, train, test, cfg.eval.topk)
+    assert "map" in out
+    for k in cfg.eval.topk:
+        assert 0.0 <= out[f"recall@{k}"] <= 1.0
+        assert 0.0 <= out[f"ndcg@{k}"] <= 1.0
+
+
+def test_ts_tr_supports_bpr_downstream():
+    cfg = _eval_cfg()
+    cfg.eval.tstr_model = "bpr"
+    synth = _dense_store(n_users=18, n_items=14, per_user=6, seed=12)
+    real_train = _dense_store(n_users=15, n_items=12, per_user=6, seed=13)
+    real_test = _dense_store(n_users=15, n_items=12, per_user=2, seed=14)
+    res = ts_tr(synth, real_train, real_test, cfg.eval, seed=cfg.seed)
+    flat = res.as_dict()
+    assert any(k.startswith("tstr_synth_") for k in flat)
+    assert any(k.startswith("relperf_") for k in flat)
