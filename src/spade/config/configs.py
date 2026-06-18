@@ -96,9 +96,9 @@ class EvalConfig:
     n_seeds: int = 5
 
     # Reference models (MF + NCF), trained on the real train split.
-    ref_dim: int = 32                   # reference embedding dimension
+    ref_dim: int = 64                   # reference embedding dimension
     ref_hidden: list[int] = field(default_factory=lambda: [64, 32])  # NCF tower
-    ref_epochs: int = 50
+    ref_epochs: int = 100
     ref_lr: float = 1e-3
     ref_l2: float = 1e-5                # embedding-norm regularization
     ref_batch_size: int = 1024
@@ -110,13 +110,14 @@ class EvalConfig:
     neighbor_k: int = 10
 
     # TS-TR downstream recommender + its (synthetic) holdout fraction.
-    tstr_model: str = "mf"              # mf | ncf
+    tstr_model: str = "mf"              # mf | ncf | bpr
     tstr_test_frac: float = 0.1
+    bpr_neg_samples: int = 1            # negatives sampled per positive (kind="bpr")
 
 
 @dataclass
 class BaselineConfig:
-    """Hyperparameters for the comparison generators (Phase 6).
+    """Hyperparameters for the comparison generators.
 
     Synthetic universe sizes and target sparsity are taken from
     :class:`SynthesisConfig`/the data so every baseline expands to the same
@@ -137,7 +138,6 @@ class BaselineConfig:
     gan_epochs: int = 100
     gan_lr: float = 1e-4
     gan_batch_size: int = 256
-    gan_n_generate: int = 50_000
 
     # VAE over interaction tuples.
     vae_dim: int = 32
@@ -146,10 +146,16 @@ class BaselineConfig:
     vae_epochs: int = 50
     vae_lr: float = 1e-3
     vae_beta: float = 1.0
-    vae_n_generate: int = 50_000
 
     # K-Means identifier recovery (GANRS, VAE).
     kmeans_iters: int = 25
+
+    # Generation budget for the tuple baselines (GANRS, VAE). The number of
+    # tuples generated is gen_oversample * target_nnz (target_nnz = rho * U' * I'),
+    # then truncated to target_nnz after K-Means recovery and de-duplication, so
+    # these baselines hit the same target density as SPADE and the other baselines
+    # rather than a fixed absolute count that does not scale with dataset size.
+    gen_oversample: float = 2.0
 
 
 @dataclass
