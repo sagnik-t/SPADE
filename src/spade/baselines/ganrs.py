@@ -28,6 +28,7 @@ from spade.baselines.base import (
     LatentBundle,
     rng_from_key,
     synthetic_sizes,
+    target_nnz,
 )
 from spade.baselines.tuples import TupleCodec, recover_universe
 from spade.config.configs import ExperimentConfig
@@ -82,7 +83,11 @@ class GANRSGenerator(BaselineGenerator):
             train.n_users, train.n_items, cfg.synthesis.alpha, cfg.synthesis.beta
         )
         self.kmeans_iters = bcfg.kmeans_iters
-        self.n_generate = bcfg.gan_n_generate
+        # Size the tuple budget to the target density (rho * U' * I'), oversampled
+        # for dedup/clustering collisions and truncated back to target in
+        # generate() — so GANRS hits the same density as SPADE on any dataset.
+        self.target_nnz = target_nnz(train.rho, self.n_users, self.n_items)
+        self.n_generate = max(1, int(np.ceil(bcfg.gen_oversample * self.target_nnz)))
 
         mf = train_mf(
             train, dim=bcfg.deepmf_dim, epochs=bcfg.deepmf_epochs, seed=cfg.seed
@@ -145,7 +150,8 @@ class GANRSGenerator(BaselineGenerator):
 
         rng = rng_from_key(k_cluster)
         dataset, user_centers, item_centers = recover_universe(
-            p_fake, q_fake, ratings, self.n_users, self.n_items, self.kmeans_iters, rng
+            p_fake, q_fake, ratings, self.n_users, self.n_items, self.kmeans_iters,
+            rng, max_nnz=self.target_nnz,
         )
         latents = LatentBundle(
             real_users=self.p, real_items=self.q,
