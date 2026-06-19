@@ -18,6 +18,7 @@ from spade.experiments import (
     ABLATIONS,
     DEFERRED_ABLATIONS,
     build_summary,
+    cell_config,
     flatten_cell,
     get_ablation,
     load_records,
@@ -87,7 +88,10 @@ def _loader(splits):
 # Ablations                                                                   #
 # --------------------------------------------------------------------------- #
 def test_ablation_registry_and_transforms():
-    assert {"base", "alpha_1.5", "alpha_3.0", "latent_reg_off", "gating_off"} <= set(ABLATIONS)
+    assert {
+        "base", "alpha_1.5", "alpha_3.0", "latent_reg_off", "gating_off",
+        "joint_generator", "continuous_decoder",
+    } <= set(ABLATIONS)
     cfg = _cfg()
     assert get_ablation("gating_off").apply(cfg).synthesis.gating is False
     assert get_ablation("alpha_3.0").apply(cfg).synthesis.alpha == 3.0
@@ -96,10 +100,18 @@ def test_ablation_registry_and_transforms():
     assert cfg.synthesis.gating is True
 
 
-def test_deferred_ablations_raise():
-    assert set(DEFERRED_ABLATIONS) == {"joint_generator", "continuous_decoder"}
-    with pytest.raises(NotImplementedError):
-        get_ablation("joint_generator").apply(_cfg())
+def test_structural_ablations_toggle_config():
+    # The two former "deferred" ablations are now implemented as config toggles.
+    assert DEFERRED_ABLATIONS == {}
+    cfg = _cfg()
+    assert get_ablation("joint_generator").apply(cfg).generative.joint is True
+    assert (
+        get_ablation("continuous_decoder").apply(cfg).representation.continuous_decoder
+        is True
+    )
+    # original config is untouched (transforms return copies)
+    assert cfg.generative.joint is False
+    assert cfg.representation.continuous_decoder is False
 
 
 # --------------------------------------------------------------------------- #
@@ -249,3 +261,19 @@ def test_gating_off_keeps_more_interactions():
 
     # Bypassing the gate keeps every candidate, so density can only go up.
     assert synth(gating=False) >= synth(gating=True)
+
+
+# --------------------------------------------------------------------------- #
+# Structural ablations end-to-end                                              #
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("ablation", ["joint_generator", "continuous_decoder"])
+def test_structural_ablation_runs_spade_end_to_end(ablation, tmp_path):
+    base, splits = _cfg(), _splits()
+    cfg = cell_config(base, "tiny", seed=0, ablation_name=ablation)
+    models = train_spade_stages(cfg, splits, cache_dir=tmp_path)
+
+    cell = run_cell(cfg, "spade", splits, models=models)
+    # SPADE still produces a full geometry + utility cell under each variant.
+    assert cell["geometry"] is not None and set(cell["geometry"]) == {"mf", "ncf"}
+    assert cell["latent"] is not None
+    assert cell["synthetic"]["nnz"] >= 0
