@@ -12,6 +12,7 @@ from flax import nnx
 from spade.config.configs import ExperimentConfig
 from spade.data import RawInteractions, build_store, split_store
 from spade.models import (
+    ContinuousRatingDecoder,
     InteractionGate,
     RatingDecoder,
     RatingVocab,
@@ -68,6 +69,32 @@ def test_decoder_distribution_is_a_simplex():
     assert logits.shape == (7, 5)
     assert jnp.allclose(dist.sum(axis=-1), 1.0, atol=1e-5)
     assert jnp.all(dist >= 0.0)
+
+
+def test_continuous_decoder_predicts_scalar_per_pair():
+    dec = ContinuousRatingDecoder(latent_dim=8, hidden=[16], rngs=_rngs())
+    z = jnp.ones((7, 8))
+    assert dec(z, z).shape == (7,)
+
+
+def test_rating_vocab_snap_projects_to_nearest_valid_value():
+    vocab = RatingVocab(values=np.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float32))
+    preds = np.array([0.2, 1.4, 2.6, 4.9, 7.0], dtype=np.float32)
+    snapped = vocab.snap(preds)
+    # nearest grid value, with out-of-range clamped to the endpoints
+    assert snapped.tolist() == [1.0, 1.0, 3.0, 5.0, 5.0]
+    assert set(np.unique(snapped).tolist()) <= set(vocab.values.tolist())
+
+
+def test_continuous_representation_model_uses_regression_decoder():
+    cfg = ExperimentConfig()
+    cfg.representation.latent_dim = 8
+    cfg.representation.continuous_decoder = True
+    model = RepresentationModel(10, 8, 5, cfg.representation, rngs=_rngs())
+    assert model.continuous is True
+    assert isinstance(model.decoder, ContinuousRatingDecoder)
+    z = jnp.ones((4, 8))
+    assert model.decoder(z, z).shape == (4,)
 
 
 # --------------------------------------------------------------------------- #
