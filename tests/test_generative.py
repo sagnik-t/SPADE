@@ -17,6 +17,7 @@ from spade.models import (
     AdversarialPair,
     Critic,
     GenerativeModel,
+    JointGenerativeModel,
     LatentGenerator,
     RepresentationModel,
     critic_loss,
@@ -24,7 +25,11 @@ from spade.models import (
     gradient_penalty,
     moment_matching_loss,
 )
-from spade.training import GenerativeTrainer, load_generative_model
+from spade.training import (
+    GenerativeTrainer,
+    JointGenerativeTrainer,
+    load_generative_model,
+)
 
 
 def _rngs(seed=0):
@@ -114,6 +119,34 @@ def test_generative_model_composition_and_sampling():
     assert model.pair("user") is model.user and model.pair("item") is model.item
     with pytest.raises(ValueError):
         model.pair("nope")
+
+
+def test_joint_generative_model_samples_halves():
+    model = JointGenerativeModel(6, GenerativeConfig(), rngs=_rngs())
+    users = model.sample_users(jax.random.key(0), 5)
+    items = model.sample_items(jax.random.key(1), 7)
+    assert users.shape == (5, 6) and items.shape == (7, 6)
+    assert model.joint.generator.latent_dim == 12  # operates over [z_u; z_i]
+
+
+def test_joint_generative_trainer_reduces_moment_and_roundtrips(tmp_path):
+    # Concatenated interaction-level pairs: width is 2 * latent_dim.
+    z_pairs = _target_cloud(512, 12, seed=4)
+    cfg = _exp_cfg(epochs=40)
+    trainer = JointGenerativeTrainer(cfg, z_pairs).fit()
+
+    early = np.mean([row["joint/moment"] for row in trainer.history[:5]])
+    late = np.mean([row["joint/moment"] for row in trainer.history[-5:]])
+    assert late < early
+
+    cfg.generative.joint = True  # load path must rebuild the joint variant
+    path = trainer.export(tmp_path, "synthetic")
+    reloaded = load_generative_model(path, cfg, seed=123)
+    assert isinstance(reloaded, JointGenerativeModel)
+    key = jax.random.key(0)
+    a = np.asarray(trainer.model.sample_users(key, 16))
+    b = np.asarray(reloaded.sample_users(key, 16))
+    assert np.allclose(a, b, atol=1e-6)
 
 
 def test_spade_umbrella_composes_stage_models():
