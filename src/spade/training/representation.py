@@ -38,9 +38,9 @@ __all__ = ["RepresentationTrainer", "load_representation_model"]
 
 
 @nnx.jit
-def _train_step(model, optimizer, u, i_pos, i_neg, rating_idx, l2_lambda):
+def _train_step(model, optimizer, u, i_pos, i_neg, rating_target, l2_lambda):
     def loss_fn(m):
-        return representation_loss(m, u, i_pos, i_neg, rating_idx, l2_lambda)
+        return representation_loss(m, u, i_pos, i_neg, rating_target, l2_lambda)
 
     (_, parts), grads = nnx.value_and_grad(loss_fn, has_aux=True)(model)
     optimizer.update(model, grads)
@@ -74,10 +74,19 @@ class RepresentationTrainer(Trainer):
         self.n_neg = cfg.data.n_neg
 
         self.vocab = RatingVocab.from_ratings(train.ratings)
-        self._train_rating_idx = self.vocab.to_index(train.ratings)
-        self._val_rating_idx = (
-            self.vocab.to_index(val.ratings) if val.nnz else np.empty(0, np.int64)
-        )
+        # Rating supervision differs by decoder: the categorical decoder is trained
+        # on class indices, the continuous (ablation) decoder on raw rating values.
+        self.continuous = cfg.representation.continuous_decoder
+        if self.continuous:
+            self._train_rating_target = train.ratings.astype(np.float32)
+            self._val_rating_target = (
+                val.ratings.astype(np.float32) if val.nnz else np.empty(0, np.float32)
+            )
+        else:
+            self._train_rating_target = self.vocab.to_index(train.ratings)
+            self._val_rating_target = (
+                self.vocab.to_index(val.ratings) if val.nnz else np.empty(0, np.int64)
+            )
         self.logger.info("rating levels: %s", self.vocab.values.tolist())
 
         self.model = RepresentationModel(
@@ -119,7 +128,7 @@ class RepresentationTrainer(Trainer):
                 jnp.asarray(u),
                 jnp.asarray(self.train.item_idx[sl]),
                 jnp.asarray(neg),
-                jnp.asarray(self._train_rating_idx[sl]),
+                jnp.asarray(self._train_rating_target[sl]),
                 rcfg.l2_lambda,
             )
         val_parts = self._eval_loss()
@@ -138,7 +147,7 @@ class RepresentationTrainer(Trainer):
             jnp.asarray(val.user_idx),
             jnp.asarray(val.item_idx),
             jnp.asarray(neg),
-            jnp.asarray(self._val_rating_idx),
+            jnp.asarray(self._val_rating_target),
             self.cfg.representation.l2_lambda,
         )
         return {k: float(v) for k, v in parts.items()}
