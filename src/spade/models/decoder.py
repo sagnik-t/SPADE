@@ -23,7 +23,7 @@ from flax import nnx
 
 from spade.models.mlp import MLP
 
-__all__ = ["RatingVocab", "RatingDecoder"]
+__all__ = ["RatingVocab", "RatingDecoder", "ContinuousRatingDecoder"]
 
 
 @dataclass(frozen=True)
@@ -57,6 +57,19 @@ class RatingVocab:
         """Map class indices back to raw rating values."""
         return self.values[np.asarray(indices)]
 
+    def snap(self, predictions: np.ndarray) -> np.ndarray:
+        """Snap continuous predictions to the nearest valid rating value.
+
+        Used only by the continuous-decoder ablation, where a regressor emits an
+        off-grid real number that must be projected back onto the discrete rating
+        support. This is the post-hoc rounding/clipping step the categorical
+        decoder avoids by construction; isolating it here keeps that contrast
+        explicit. Out-of-range predictions clamp to the nearest endpoint.
+        """
+        preds = np.asarray(predictions, dtype=np.float64)
+        nearest = np.abs(self.values[None, :] - preds[:, None]).argmin(axis=1)
+        return self.values[nearest]
+
 
 class RatingDecoder(nnx.Module):
     """MLP scoring ``[z_u; z_i] -> logits`` over ``n_levels`` rating classes."""
@@ -80,3 +93,28 @@ class RatingDecoder(nnx.Module):
     def distribution(self, z_u: jnp.ndarray, z_i: jnp.ndarray) -> jnp.ndarray:
         """Return categorical rating probabilities ``(batch, n_levels)``."""
         return nnx.softmax(self(z_u, z_i), axis=-1)
+
+
+class ContinuousRatingDecoder(nnx.Module):
+    """Regress a single continuous rating from ``[z_u; z_i]`` (ablation variant).
+
+    The discrete-vs-continuous ablation replaces the categorical decoder with a
+    scalar regressor trained under MSE; at synthesis the prediction is snapped to
+    the nearest valid rating via :meth:`RatingVocab.snap`. This deliberately
+    reintroduces the post-hoc rounding the categorical decoder removes, so the
+    ablation measures the cost of leaving rating discreteness unconstrained.
+    """
+
+    def __init__(
+        self,
+        latent_dim: int,
+        hidden: Sequence[int],
+        *,
+        rngs: nnx.Rngs,
+    ) -> None:
+        self.mlp = MLP(2 * latent_dim, hidden, 1, rngs=rngs)
+
+    def __call__(self, z_u: jnp.ndarray, z_i: jnp.ndarray) -> jnp.ndarray:
+        """Return predicted continuous ratings ``(batch,)`` for paired latents."""
+        x = jnp.concatenate([z_u, z_i], axis=-1)
+        return self.mlp(x).squeeze(-1)
