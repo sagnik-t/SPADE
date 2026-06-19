@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 __all__ = [
     "gate_bce_loss",
     "rating_nll_loss",
+    "rating_mse_loss",
     "embedding_l2",
     "representation_loss",
 ]
@@ -58,6 +59,19 @@ def rating_nll_loss(
     ).mean()
 
 
+def rating_mse_loss(
+    predictions: jnp.ndarray,
+    rating_values: jnp.ndarray,
+) -> jnp.ndarray:
+    """Mean squared error of regressed ratings against raw rating values.
+
+    Used by the continuous-decoder ablation in place of :func:`rating_nll_loss`;
+    the regressor predicts an off-grid real number that is snapped to the nearest
+    valid rating only at synthesis time.
+    """
+    return jnp.mean(jnp.square(predictions - rating_values))
+
+
 def embedding_l2(model: RepresentationModel) -> jnp.ndarray:
     """Sum of squared L2 norms of the two encoder embedding tables.
 
@@ -76,15 +90,17 @@ def representation_loss(
     u: jnp.ndarray,
     i_pos: jnp.ndarray,
     i_neg: jnp.ndarray,
-    rating_idx: jnp.ndarray,
+    rating_target: jnp.ndarray,
     l2_lambda: float,
 ) -> tuple[jnp.ndarray, dict[str, jnp.ndarray]]:
     """Assemble the joint representation-stage loss and its component dict.
 
     ``u``/``i_pos`` are aligned observed pairs ``(B,)``; ``i_neg`` is ``(B, n_neg)``
-    sampled negative items for the same users; ``rating_idx`` are the observed
-    ratings as class indices ``(B,)``. Returns ``(total, parts)`` so the caller
-    can log each term.
+    sampled negative items for the same users. ``rating_target`` is the observed
+    rating supervision ``(B,)``: class indices for the categorical decoder, or raw
+    rating values when ``model.continuous`` selects the regression decoder. The
+    rating term switches between categorical NLL and MSE accordingly. Returns
+    ``(total, parts)`` so the caller can log each term.
     """
     z_u = model.encode_users(u)                       # (B, d)
     z_i_pos = model.encode_items(i_pos)               # (B, d)
@@ -96,7 +112,11 @@ def representation_loss(
     neg_logits = model.gate(z_u_rep, z_i_neg)         # (B*n_neg,)
 
     gate = gate_bce_loss(pos_logits, neg_logits)
-    rating = rating_nll_loss(model.decoder(z_u, z_i_pos), rating_idx)
+    pred = model.decoder(z_u, z_i_pos)
+    if model.continuous:
+        rating = rating_mse_loss(pred, rating_target)
+    else:
+        rating = rating_nll_loss(pred, rating_target)
     l2 = embedding_l2(model)
     total = gate + rating + l2_lambda * l2
     parts = {"gate": gate, "rating": rating, "l2": l2, "total": total}
