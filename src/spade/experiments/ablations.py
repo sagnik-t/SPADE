@@ -5,16 +5,19 @@ copy* of an :class:`ExperimentConfig` (the original is never mutated, so the sam
 base config can spawn every ablation). The harness runs the full generator matrix
 under each registered ablation and tags the results with its name.
 
-Implemented here are the config/synthesis-level ablations:
+Every ablation is a single config toggle; the model variants they select live in
+the model/training layers and are keyed into their own stage caches by the config
+signature, so no ablation needs bespoke orchestration here:
 
 * the **expansion-ratio sweep** ``alpha = beta in {1.5, 2, 3}`` (2 == base);
 * **latent-reg off** — drop the Stage II moment-matching term (``moment_lambda=0``);
-* **gating off** — bypass the interaction gate at synthesis.
+* **gating off** — bypass the interaction gate at synthesis;
+* **joint generator** — replace the two factorized Stage II generators with a
+  single joint WGAN-GP over ``[z_u; z_i]`` (``generative.joint``);
+* **continuous decoder** — replace the categorical rating decoder with a
+  regressor plus post-hoc snapping (``representation.continuous_decoder``).
 
-Two further ablations from the paper — **joint-vs-factorized** Stage II and
-**discrete-vs-continuous** decoding — require new *model architectures*, not config
-toggles, and are deferred to dedicated work; they are registered as explicit
-``NotImplementedError`` stubs so the gap is visible rather than silent.
+``DEFERRED_ABLATIONS`` is retained (now empty) for backward compatibility.
 """
 
 from __future__ import annotations
@@ -64,13 +67,18 @@ def _gating_off() -> Ablation:
     return Ablation("gating_off", lambda cfg: _with(cfg, mutate))
 
 
-def _deferred(name: str, reason: str) -> Ablation:
-    def apply(_: ExperimentConfig) -> ExperimentConfig:
-        raise NotImplementedError(
-            f"ablation {name!r} needs a new model variant ({reason}); deferred."
-        )
+def _joint_generator() -> Ablation:
+    def mutate(c: ExperimentConfig) -> None:
+        c.generative.joint = True
 
-    return Ablation(name, apply)
+    return Ablation("joint_generator", lambda cfg: _with(cfg, mutate))
+
+
+def _continuous_decoder() -> Ablation:
+    def mutate(c: ExperimentConfig) -> None:
+        c.representation.continuous_decoder = True
+
+    return Ablation("continuous_decoder", lambda cfg: _with(cfg, mutate))
 
 
 _REGISTERED = [
@@ -79,18 +87,15 @@ _REGISTERED = [
     _set_alpha(3.0),
     _latent_reg_off(),
     _gating_off(),
+    _joint_generator(),
+    _continuous_decoder(),
 ]
 
 ABLATIONS: dict[str, Ablation] = {a.name: a for a in _REGISTERED}
 
-# Visible placeholders for the structural ablations that need model surgery.
-DEFERRED_ABLATIONS: dict[str, Ablation] = {
-    a.name: a
-    for a in [
-        _deferred("joint_generator", "joint Stage II generator over (z_u, z_i)"),
-        _deferred("continuous_decoder", "continuous-rating regression decoder"),
-    ]
-}
+# Both structural ablations are now implemented as config toggles; the mapping is
+# kept (empty) so existing imports of ``DEFERRED_ABLATIONS`` keep working.
+DEFERRED_ABLATIONS: dict[str, Ablation] = {}
 
 
 def get_ablation(name: str) -> Ablation:
