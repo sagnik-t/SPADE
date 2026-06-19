@@ -118,6 +118,25 @@ def test_synthesize_produces_valid_dataset():
     assert np.unique(flat).shape[0] == synth.nnz
 
 
+def test_continuous_decoder_synthesis_stays_on_rating_grid():
+    # Build a representation model with the continuous-rating ablation enabled,
+    # then confirm synthesized ratings are snapped back onto the discrete support.
+    cfg = ExperimentConfig()
+    cfg.representation.latent_dim = 8
+    cfg.representation.continuous_decoder = True
+    cfg.generative.noise_dim = 8
+    cfg.generative.generator_hidden = [16]
+    cfg.generative.critic_hidden = [16]
+    rep = RepresentationModel(20, 16, 5, cfg.representation, rngs=_rngs(0))
+    gen = GenerativeModel(8, cfg.generative, rngs=_rngs(1))
+    vocab = RatingVocab(values=np.arange(1, 6, dtype=np.float32))
+
+    model = _synth_model(cfg, rep, gen, vocab, n_users=20, n_items=16, rho=0.2)
+    synth = model.synthesize(jax.random.key(0))
+    if synth.nnz:
+        assert set(np.unique(synth.ratings).tolist()) <= set(vocab.values.tolist())
+
+
 def test_synthesis_is_deterministic_in_key():
     cfg, rep, gen, vocab = _build()
     model = _synth_model(cfg, rep, gen, vocab)
