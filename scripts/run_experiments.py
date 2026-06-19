@@ -7,7 +7,9 @@ cached as JSON and skipped on re-run.
 
     poetry run python scripts/run_experiments.py \
         --datasets ml-100k --generators spade random marginal noise_mf ganrs vae \
-        --seeds 0 1 2 3 4 --ablations base alpha_1.5 alpha_3.0 latent_reg_off gating_off
+        --seeds 0 1 2 3 4 \
+        --ablations base alpha_1.5 alpha_3.0 latent_reg_off gating_off \
+                    joint_generator continuous_decoder
 
 All other flags are the usual nested config flags (e.g. ``--representation.epochs``).
 Training curves and per-cell metrics are logged to W&B (one run per trained stage
