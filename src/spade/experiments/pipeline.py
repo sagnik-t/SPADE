@@ -21,6 +21,8 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 from spade.baselines import BASELINE_REGISTRY, GeneratorOutput, SpadeGenerator
 from spade.config.configs import ExperimentConfig
 from spade.data.interactions import InteractionStore
@@ -30,10 +32,11 @@ from spade.eval.downstream import ts_tr
 from spade.eval.geometry import geometry_metrics
 from spade.experiments.aggregate import flatten_cell
 from spade.models.decoder import RatingVocab
-from spade.models.generative import GenerativeModel
+from spade.models.generative import GenerativeModel, JointGenerativeModel
 from spade.models.representation import RepresentationModel
 from spade.training import (
     GenerativeTrainer,
+    JointGenerativeTrainer,
     RepresentationTrainer,
     load_generative_model,
     load_representation_model,
@@ -70,7 +73,7 @@ class SpadeModels:
 
     representation: RepresentationModel
     vocab: RatingVocab
-    generative: GenerativeModel
+    generative: GenerativeModel | JointGenerativeModel
 
 
 def train_spade_stages(
@@ -114,7 +117,15 @@ def train_spade_stages(
         logger.info("training generative stage -> %s", gen_path.name)
         run = _run(cfg, f"{wandb_prefix}-generative" if wandb_prefix else None, group=wandb_prefix)
         z_u, z_i = representation.export_embeddings(train.n_users, train.n_items)
-        gtrainer = GenerativeTrainer(cfg, z_u, z_i, run=run).fit()
+        if cfg.generative.joint:
+            # Joint ablation: train one WGAN-GP over the concatenated latents of
+            # observed interactions instead of two independent entity generators.
+            z_pairs = np.concatenate(
+                [z_u[train.user_idx], z_i[train.item_idx]], axis=1
+            )
+            gtrainer = JointGenerativeTrainer(cfg, z_pairs, run=run).fit()
+        else:
+            gtrainer = GenerativeTrainer(cfg, z_u, z_i, run=run).fit()
         if run is not None:
             run.finish()
         save_params(
