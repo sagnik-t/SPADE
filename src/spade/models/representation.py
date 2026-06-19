@@ -18,7 +18,7 @@ import numpy as np
 from flax import nnx
 
 from spade.config.configs import RepresentationConfig
-from spade.models.decoder import RatingDecoder
+from spade.models.decoder import ContinuousRatingDecoder, RatingDecoder
 from spade.models.encoders import ItemEncoder, UserEncoder
 from spade.models.gate import InteractionGate
 
@@ -44,9 +44,19 @@ class RepresentationModel(nnx.Module):
             n_items, cfg.latent_dim, cfg.encoder_hidden, rngs=rngs
         )
         self.gate = InteractionGate(cfg.latent_dim, cfg.gate_hidden, rngs=rngs)
-        self.decoder = RatingDecoder(
-            cfg.latent_dim, cfg.decoder_hidden, n_rating_levels, rngs=rngs
-        )
+        # The rating decoder is either categorical (discrete by construction, the
+        # default) or a continuous regressor + post-hoc snapping (ablation). The
+        # flag is read here so the rest of the stack can branch on
+        # ``self.continuous`` rather than re-inspecting the config.
+        self.continuous = cfg.continuous_decoder
+        if self.continuous:
+            self.decoder = ContinuousRatingDecoder(
+                cfg.latent_dim, cfg.decoder_hidden, rngs=rngs
+            )
+        else:
+            self.decoder = RatingDecoder(
+                cfg.latent_dim, cfg.decoder_hidden, n_rating_levels, rngs=rngs
+            )
 
     def encode_users(self, u: jnp.ndarray) -> jnp.ndarray:
         return self.user_encoder(u)
