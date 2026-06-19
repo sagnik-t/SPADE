@@ -30,7 +30,7 @@ import numpy as np
 
 from spade.config.configs import SynthesisConfig
 from spade.models.decoder import RatingVocab
-from spade.models.generative import GenerativeModel
+from spade.models.generative import GenerativeModel, JointGenerativeModel
 from spade.models.representation import RepresentationModel
 from spade.synthesis.ann import top_c_candidates
 from spade.synthesis.dataset import SyntheticDataset
@@ -45,7 +45,7 @@ class SynthesisModel:
     def __init__(
         self,
         representation: RepresentationModel,
-        generative: GenerativeModel,
+        generative: GenerativeModel | JointGenerativeModel,
         vocab: RatingVocab,
         *,
         source_n_users: int,
@@ -165,6 +165,18 @@ class SynthesisModel:
             return np.empty(0, dtype=np.float32)
         decoder = self.representation.decoder
         bs = self.cfg.score_batch_size
+
+        # Continuous-decoder ablation: regress a scalar rating per pair and snap
+        # it to the nearest valid value (post-hoc rounding). No categorical draw,
+        # so the rating key is unused in this branch.
+        if getattr(self.representation, "continuous", False):
+            preds = np.empty(n, dtype=np.float32)
+            for start in range(0, n, bs):
+                u = jnp.asarray(users[start : start + bs])
+                i = jnp.asarray(items[start : start + bs])
+                preds[start : start + bs] = np.asarray(decoder(z_users[u], z_items[i]))
+            return self.vocab.snap(preds).astype(np.float32)
+
         idx = np.empty(n, dtype=np.int64)
         chunk_keys = jax.random.split(key, math.ceil(n / bs))
         for j, start in enumerate(range(0, n, bs)):
