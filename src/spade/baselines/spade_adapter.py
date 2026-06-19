@@ -16,7 +16,7 @@ from spade.baselines.base import Generator, GeneratorOutput, LatentBundle
 from spade.config.configs import ExperimentConfig
 from spade.data.interactions import InteractionStore
 from spade.models.decoder import RatingVocab
-from spade.models.generative import GenerativeModel
+from spade.models.generative import GenerativeModel, JointGenerativeModel
 from spade.models.representation import RepresentationModel
 from spade.synthesis.synthesizer import SynthesisModel
 
@@ -31,7 +31,7 @@ class SpadeGenerator(Generator):
     def __init__(
         self,
         representation: RepresentationModel,
-        generative: GenerativeModel,
+        generative: GenerativeModel | JointGenerativeModel,
         vocab: RatingVocab,
         train: InteractionStore,
         cfg: ExperimentConfig,
