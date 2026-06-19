@@ -27,7 +27,7 @@ from spade.config.configs import GenerativeConfig
 from spade.models.critics import Critic
 from spade.models.generators import LatentGenerator
 
-__all__ = ["AdversarialPair", "GenerativeModel"]
+__all__ = ["AdversarialPair", "GenerativeModel", "JointGenerativeModel"]
 
 
 class AdversarialPair(nnx.Module):
@@ -77,3 +77,37 @@ class GenerativeModel(nnx.Module):
     def sample_items(self, key: jax.Array, n: int) -> jnp.ndarray:
         """Generate ``n`` synthetic item latent vectors ``(n, latent_dim)``."""
         return self.item.sample(key, n)
+
+
+class JointGenerativeModel(nnx.Module):
+    """Ablation: a single WGAN-GP over the concatenated pair ``[z_u; z_i]``.
+
+    Where :class:`GenerativeModel` factorizes Stage II into two independent
+    generators, this variant models the *joint* user--item latent distribution
+    with one generator/critic over a ``2 * latent_dim`` space, trained on the
+    concatenated embeddings of observed interactions. It exposes the same
+    :meth:`sample_users` / :meth:`sample_items` interface so synthesis is
+    unchanged: each call draws joint vectors and returns the corresponding half,
+    yielding user and item pools whose marginals come from the jointly trained
+    model. (Synthesis recombines entities via ANN + gate regardless, so only the
+    marginals carry through — which is exactly what the factorized-vs-joint
+    ablation is meant to probe.)
+    """
+
+    def __init__(
+        self,
+        latent_dim: int,
+        cfg: GenerativeConfig,
+        *,
+        rngs: nnx.Rngs,
+    ) -> None:
+        self.latent_dim = latent_dim
+        self.joint = AdversarialPair(2 * latent_dim, cfg, rngs=rngs)
+
+    def sample_users(self, key: jax.Array, n: int) -> jnp.ndarray:
+        """Draw ``n`` joint vectors and return their user halves ``(n, latent_dim)``."""
+        return self.joint.sample(key, n)[:, : self.latent_dim]
+
+    def sample_items(self, key: jax.Array, n: int) -> jnp.ndarray:
+        """Draw ``n`` joint vectors and return their item halves ``(n, latent_dim)``."""
+        return self.joint.sample(key, n)[:, self.latent_dim :]
