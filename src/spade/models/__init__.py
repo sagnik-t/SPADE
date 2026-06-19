@@ -10,7 +10,7 @@ the :class:`SPADE` umbrella ties together. Training lives in
 """
 
 from spade.models.critics import Critic
-from spade.models.decoder import RatingDecoder, RatingVocab
+from spade.models.decoder import ContinuousRatingDecoder, RatingDecoder, RatingVocab
 from spade.models.encoders import ItemEncoder, UserEncoder
 from spade.models.gan_losses import (
     critic_loss,
@@ -19,11 +19,16 @@ from spade.models.gan_losses import (
     moment_matching_loss,
 )
 from spade.models.gate import InteractionGate
-from spade.models.generative import AdversarialPair, GenerativeModel
+from spade.models.generative import (
+    AdversarialPair,
+    GenerativeModel,
+    JointGenerativeModel,
+)
 from spade.models.generators import LatentGenerator
 from spade.models.losses import (
     embedding_l2,
     gate_bce_loss,
+    rating_mse_loss,
     rating_nll_loss,
     representation_loss,
 )
@@ -37,16 +42,19 @@ __all__ = [
     "ItemEncoder",
     "InteractionGate",
     "RatingDecoder",
+    "ContinuousRatingDecoder",
     "RatingVocab",
     "RepresentationModel",
     "gate_bce_loss",
     "rating_nll_loss",
+    "rating_mse_loss",
     "embedding_l2",
     "representation_loss",
     "LatentGenerator",
     "Critic",
     "AdversarialPair",
     "GenerativeModel",
+    "JointGenerativeModel",
     "SPADE",
     "gradient_penalty",
     "critic_loss",
