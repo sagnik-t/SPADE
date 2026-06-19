@@ -48,6 +48,7 @@ class RepresentationConfig:
     epochs: int = 100
     l2_lambda: float = 1e-5             # embedding-norm regularization
     early_stop_patience: int = 10
+    continuous_decoder: bool = False    # ablation: regress + round instead of categorical
 
 
 @dataclass
@@ -65,6 +66,7 @@ class GenerativeConfig:
     adam_b2: float = 0.9
     batch_size: int = 256
     epochs: int = 500
+    joint: bool = False                 # ablation: single joint G over [z_u; z_i]
 
 
 @dataclass
